@@ -5,8 +5,8 @@
 * Лекция 1. Вводная лекция
 * Лекция 2. [Промышленное приложение](https://naumen-student.github.io/EnterpriseJavaCourse-s2021/lecture/lecture02.html)
 * *Практика 1.*
-* Лекция 3. 
-* Лекция 4. 
+* Лекция 3. [Inversion of Control](https://naumen-student.github.io/EnterpriseJavaCourse-s2021/lecture/lecture03.html)
+* Лекция 4. [RPC или социализация приложений](https://naumen-student.github.io/EnterpriseJavaCourse-s2021/lecture/lecture04.html)
 * Лекция 5. 
 * *Практика 2.*
 * Лекция 6. 

@@ -6,8 +6,8 @@ layout: default
 * Лекция 1. Вводная лекция
 * Лекция 2. [Промышленное приложение](lecture/lecture02.html)
 * *Практика 1.*
-* Лекция 3. 
-* Лекция 4. 
+* Лекция 3. [Inversion of Control](lecture/lecture03.html)
+* Лекция 4. [RPC или социализация приложений](lecture/lecture04.html)
 * Лекция 5. 
 * *Практика 2.*
 * Лекция 6. 
