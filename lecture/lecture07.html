@@ -1,0 +1,1429 @@
+<!doctype html>
+<html lang="ru">
+
+<head>
+    <meta charset="utf-8">
+
+    <title>JMM и GC</title>
+
+    <meta name="description" content="RPC или социализация приложений">
+    <meta name="author" content="Titov Egor">
+
+    <meta name="apple-mobile-web-app-capable" content="yes"/>
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, minimal-ui">
+
+    <link rel="stylesheet" href="css/reveal.css">
+    <link rel="stylesheet" href="css/theme/white04.css" id="theme">
+
+    <link rel="stylesheet" href="css/hljs/vs.css" id="highlight-theme">
+
+    <!-- Printing and PDF exports -->
+    <script>
+        var link = document.createElement('link');
+        link.rel = 'stylesheet';
+        link.type = 'text/css';
+        link.href = window.location.search.match(/print-pdf/gi) ? 'css/print/pdf.css' : 'css/print/paper.css';
+        document.getElementsByTagName('head')[0].appendChild(link);
+    </script>
+
+    <!--[if lt IE 9]>
+    <script src="lib/js/html5shiv.js"></script>
+    <![endif]-->
+
+    <style>
+        .reveal .slide-number {
+            font-size: 22pt;
+            color: black;
+        }
+
+        .reveal pre {
+            background: none;
+            border: none;
+            box-shadow: none;
+        }
+
+        .reveal pre code {
+            color: black;
+            background: none;
+            box-shadow: none;
+            max-height: none;
+        }
+
+        .reveal section img {
+            border: none;
+            box-shadow: none;
+        }
+
+        .reveal pre code {
+            overflow: hidden;
+        }
+
+        .reveal .footer {
+            font-size: 22pt;
+            color: black;
+
+            position: absolute;
+            left: 35%;
+            bottom: 0.5em;
+        }
+
+        .corp-name {
+            color: orangered;
+            font-family: "Circe", sans-serif;
+        }
+
+        /* .reveal .slides {
+            margin: 0 auto;
+        } */
+
+        /* body {
+            transform: scale(.8) translateY(-135px);
+        } */
+
+        /*img {
+            transform: scale(.8)
+        }*/
+        p {
+            font-size: 0.5em;
+            text-align: left;
+        }
+        li  {
+            font-size: 0.5em;
+        }
+        span.code {
+            background-color: lightgrey;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="reveal">
+    <div class="footer">
+        <span class="corp-name"><b>NAUMEN </b></span>Титов Егор
+    </div>
+
+    <div class="slides">
+        <section>
+            <h1>JMM и GC</h1>
+        </section>
+        <section>
+            <h3>Для чего?</h3>
+            <p>В <code>Java</code> у разработчика есть доступ только к созданию объекта, мы не можем явно
+                его удалить. Для этого в JVM есть такой механизм как GC, который и подчищает
+                нашу память от неиспользуемых объектов.</p>
+        </section>
+        <section>
+            <h3>Что такое выделение и очистка памяти?</h3>
+            <ul>
+                Ключевые слова
+                <li>Stack и Heap</li>
+                <li>Аллокация</li>
+                <li>Утечки памяти (memory leaks)</li>
+                <li>Время жизни объекта</li>
+                <li>Корневая ссылка (root)</li>
+                <li>Достижимый объект</li>
+            </ul>
+        </section>
+        <section>
+            <h3>Что такое Heap и Stack память в Java?</h3>
+            <img src="img/jmmgc/java-memory-model-1.png"/>
+        </section>
+        <section>
+            <h5><code>Stack</code> память в Java</h5>
+            <p class="fontsize">
+                Стековая память в Java работает по схеме LIFO (Последний-зашел-Первый-вышел). Всякий раз, когда
+                вызывается метод, в памяти стека создается новый блок, который содержит примитивы и ссылки на
+                другие объекты в методе. Как только метод заканчивает работу, блок также перестает
+                использоваться, тем самым предоставляя доступ для следующего метода.
+            </p>
+        </section>
+        <section>
+            <h5><code>Heap</code> память в Java</h5>
+            <p class="fontsize">
+                Эта область памяти используется для объектов и классов. Новые объекты всегда создаются в куче, а
+                ссылки на них хранятся в стеке.
+            </p>
+            <p class="fontsize">
+                Эти объекты имеют глобальный доступ и могут быть получены из любого места программы
+            </p>
+        </section>
+        <section>
+            <h3>Что такое Heap и Stack память в Java?</h3>
+            <img src="img/jmmgc/java-memory-model-2.png"/>
+        </section>
+<!--        <section>
+            <p class="fontsize">К объектам в куче имеет доступ любой процесс, у которого есть ссылка на этот объект.
+                Если у двух процессов
+                есть ссылки на один и тотже объект, то они оба бубт иметь к нему доступ.</p>
+            <p class="fontsize">Но каждый имеет свою копию локальных переменных, то что находится в стеке</p>
+        </section>-->
+        <section>
+            <h3>Что такое Heap и Stack память в Java?</h3>
+            <img src="img/jmmgc/java-memory-model-3.png"/>
+        </section>
+        <section>
+            <h3>Что такое Heap и Stack память в Java?</h3>
+            <p>JMM - это синтетическое представление физической памяти</p>
+            <img src="img/jmmgc/java-memory-model-5.png">
+        </section>
+        <section>
+            <h3>Аллокация</h3>
+            <div>
+                <div style="float:left; width: 50%; top: 4em;position: relative; text-align: left;">Аллокация- это
+                    выделение памяти для нового объекта.
+                </div>
+                <div style="float:left; width: 50%"><img src="img/jmmgc/allocate_1.jpg"></div>
+            </div>
+        </section>
+        <section>
+            <h3>Аллокация: Как это происходит</h3>
+            <div>
+                <p class="fontsize">Так как память в JVM освобождает GC, то аллокатору нужно лишь знать, где эту
+                    свободную память искать,
+                    фактически управлять доступом к одному указателю на эту самую свободную память.
+                    bump-the-pointer: каждому потоку выделяется большой кусок памяти, который принадлежит только ему.
+                </p>
+                <img style="width: 70%" src="img/jmmgc/allocate_kak eto proishodit.jpg">
+            </div>
+        </section>
+        <section>
+            <h3>Аллокация: Как это происходит</h3>
+            <div>
+                <p class="fontsize">Аллокации внутри такого буфера происходят всё тем же инкрементом указателя (но
+                    уже локальным, без синхронизации) пока это возможно, а новая область
+                    запрашивается каждый раз, когда текущая заканчивается. Такая область и
+                    называется thread-local allocation buffer(TLAB).
+                </p>
+                <img style="width: 70%" src="img/jmmgc/allocate_kak eto proishodit_2.jpg"></div>
+        </section>
+        <section>
+            <h3>Утечка памяти: Что это такое</h3>
+            <div>
+                <div style="width: 50%; float: left; text-align: left;">
+                    <p class="fontsize">Утечка памяти — это ситуация, когда в куче есть объекты, которые больше не
+                        используются, но сборщик мусора не
+                        может удалить их, что приводит к
+                        нерациональному расходованию памяти.
+                    </p>
+                    <p class="fontsize">
+                        Проблема:<br>
+                        Утечка блокирует ресурсы памяти, что со
+                        временем приводит к ухудшению
+                        производительности системы. И если ее не
+                        устранить, приложение исчерпает свои ресурсы и
+                        завершиться с ошибкой
+                        <b>java.lang.OutOfMemoryError</b>
+                    </p>
+                </div>
+
+                <img style="width: 50%;" src="img/jmmgc/memoryleask.jpg">
+            </div>
+
+        </section>
+        <section>
+            <h3>Утечка памяти</h3>
+            <h5>Симптомы</h5>
+            <ol>
+                <li>Серьезное ухудшение производительности, когда оно работает
+                продолжительное время</li>
+                <li>Возникновение в приложении ошибки java.lang.OutOfMemoryError</li>
+                <li>Спонтанные и странные сбои в приложении</li>
+            </ol>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>из-за статических полей</h5>
+            <p class="fontsize">В Java время жизни статических полей обычно совпадает со временем работы приложения
+            </p>
+            <div style="width: 40%; float: left">
+            <pre style="font-size: medium;">
+                <code data-trim class="java">
+public class StaticTest {
+    public static List&lt;Double> list
+                    = new ArrayList&lt;>();
+
+    public void populateList() {
+        for (int i=0; i<10_000_000; i++){
+            list.add(Math.random());
+        }
+    }
+    public static main(String[] args) {
+        new StaticTest().populateList();
+    }
+}
+                </code>
+            </pre></div>
+            <img style="width: 50%; float: left" src="img/jmmgc/utechka_pamyti_grafik.jpg">
+
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>из-за статических полей</h5>
+            <p>Однако, если мы отбросим слово static в строке номер 2, то это приведет к резкому изменению использования памяти:
+            </p>
+            <div style="width: 40%; float: left">
+            <pre style="font-size: medium;">
+                <code data-trim class="java">
+public class StaticTest {
+    public List&lt;Double> list
+                    = new ArrayList&lt;>();
+
+    public void populateList() {
+        for (int i=0; i<10_000_000; i++){
+            list.add(Math.random());
+        }
+    }
+    public static main(String[] args) {
+        new StaticTest().populateList();
+        Log.info("Free");
+    }
+}
+                </code>
+            </pre></div>
+            <img style="width: 50%; float: left" src="img/jmmgc/utechka_pamyti_grafik2.jpg">
+        </section>
+        <section>
+            <h3>Утечка памяти:</h3>
+            <h5> из-за статических полей</h5>
+            <ol>Как это предотвратить?
+                <li>Минимизировать использование статических переменных в приложении</li>
+                <li>При использовании синглтонов использовать реализацию с ленивый загрузкой
+                    объекта, вместо немедленной
+                </li>
+            </ol>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>через незакрытые ресурсы</h5>
+            <ul><li>Всякий раз, когда мы создаем новое соединение или открываем поток,
+                JVM выделяет память для этих ресурсов. Это могут быть соединения с базой данных,
+                входящие потоки или сессионные объекты.
+            </li>
+                <li>Забывая закрыть эти ресурсы, вы можете заблокировать память, тем самым делая
+                    их недоступными для сборщика мусора. Это может произойти даже в случае
+                    возникновения исключения, которое не позволит программе выполнить код,
+                    отвечающий за закрытие ресурсов.
+                </li></ul>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>через незакрытые ресурсы</h5>
+            <ol>Как это предотвратить?
+                <li>Всегда используйте <code>finally</code> блок для закрытия ресурсов</li>
+                <li>Код (даже в блоке <code>finally</code>), который закрывает ресурсы, не должен иметь
+                    никаких необработанных исключений
+                </li>
+
+            </ol>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>неверные реализации equals() и hashCode()</h5>
+            <p>При написании новых классов очень распространенной ошибкой является
+                некорректное написание переопределяемых методов <code>equals()</code> и <code>hashCode()</code>
+            </p>
+            <p><code>HashSet</code> и <code>HashMap</code> используют эти методы во многих операциях и если они не
+                переопределены правильно, то эти методы могут стать источником потенциальных
+                проблем, связанных с утечкой памяти
+            </p>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>неверные реализации equals() и hashCode()</h5>
+            <p>Поскольку <b>Map</b> не позволяет
+                использовать дубликаты ключей,
+                многочисленные объекты <b>Person</b>,
+                которые мы добавили, не должны
+                увеличить занимаемую ими
+                пространство в памяти.
+            </p>
+            <pre><code data-trim class="java">
+public class Person {
+    public String name;
+    public Person(String name) {
+        this.name = name;
+    }
+}
+@Test
+public void givenMap_whenEqualsAndHashCodeNotOverridden_thenMemoryLeak() {
+    Map&lt;Person, Integer> map = new HashMap&lt;>();
+    for (int i = 0; i < 100; i++) {
+        map.put(new Person("jon"), 1);
+    }
+    Assert.assertFalse(map.size() == 1);
+}
+            </code></pre>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>неверные реализации equals() и hashCode()</h5>
+            <p>Поскольку мы не определили правильные метод <code>equals()</code>, дублирующие
+                объекты накопились и заняли память. В этом случае потребление памяти кучи
+                выглядит следующим образом:
+            </p>
+            <img src="img/jmmgc/grafik_slaid23.jpg">
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>неверные реализации equals() и hashCode()</h5>
+            <div>
+                <div style="float: left; width: 50%;"><pre style="font-size: medium;"><code data-trim class="java">
+public class Person {
+    public String name;
+    public Person(String name) {
+        this.name = name;
+    }
+    @Override
+    public boolean equals(Object o) {
+        if (o == this) return true;
+        if (!(o instanceof Person)) {
+            return false;
+        }
+        Person person = (Person) o;
+        return person.name.equals(name);
+    }
+    @Override
+    public int hachCode() {
+        int result = 17;
+        result = 31 * result + name.hachCode();
+        return result;
+    }
+}
+                </code></pre>
+                </div>
+                <div style="float: left; width: 50%;"><pre style="font-size: medium"><code data-trim class="java">
+@Test
+public void givenMap_whenEqualsAndHashCodeNotOverridden_thenMemoryLeak() {
+    Map&lt;Person, Integer> map = new HashMap&lt;>();
+    for (int i = 0; i < 100; i++) {
+        map.put(new Person("jon"), 1)
+    }
+    Assert.assertTrue(map.size() == 1);
+}
+                </code></pre>
+                </div>
+
+            <img width="50%" src="img/jmmgc/grafik_slaid24.jpg">
+            </div>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>неверные реализации equals() и hashCode()</h5>
+            <ol>Как это предотвратить?
+                <li>Взять за правило, при создании новых сущностей (Entity), всегда
+                    переопределять методы <code>equals()</code> и <code>hashCode()</code></li>
+                <li>Не достаточно просто переопределить эти методы. Они должны быть
+                    переопределены оптимальным образом</li>
+
+            </ol>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>внутренние классы, ссылаются на внешние классы</h5>
+            <div>
+            <img style="float: left; width: 55%" src="img/jmmgc/grafik_slaid26_1.jpg">
+                <div style="font-size: 0.5em;">Однако, если мы просто
+                    объявим внутренний класс
+                    как статический, то та же
+                    модель памяти будет
+                    выглядеть так:
+                </div>
+            <img style="float: left; width: 45%" src="img/jmmgc/grafik_slaid26_2.jpg">
+            </div>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>внутренние классы, ссылаются на внешние классы</h5>
+            <p>Как это предотвратить?
+                Если внутреннему классу не нужен доступ к членам внешнего класса,
+                подумайте о превращении его в статический класс
+
+            </p>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>использование ThreadLocals</h5>
+            <ol><li><code>ThreadLocal</code> — это механизм, который позволяет изолировать состояние
+                (значения переменных) в определенном потоке, что делает его безопасным.</li>
+                <li>Несмотря на свои преимущества, использование переменных ThreadLocal
+                противоречиво, поскольку они могут являться причиной утечек памяти, если они не
+                    используются должным образом.</li>
+
+            </ol>
+        </section>
+        <section>
+            <h3>Утечка памяти: </h3>
+            <h5>использование ThreadLocals</h5>
+            <ol>Как это предотвратить?
+                <li>Хорошей практикой является очищение <code>ThreadLocal</code> переменных, когда они больше не
+                используются. <code>ThreadLocal</code> предоставляет метод <code class="code">remove()</code>, который удаляет значение
+                переменной для текущего потока</li>
+                <li>Не используйте <code class="code">ThreadLocal.set(null)</code> для очистки значения — на самом деле оно не
+                очищает значение, а вместо этого ищет мапу, связанную с текущим потоком, и
+                    устанавливает пару ключ-значение — текущий поток и null соответственно</li>
+                <li>Еще лучше рассмотреть <code class="code">ThreadLocal</code> как ресурс, который необходимо закрыть в блоке
+                    <code class="code">finally</code>, чтобы убедиться, что он всегда будет закрыт, даже в случае исключения:</li>
+            </ol>
+        </section>
+        <section data-transition="fade-out">
+            <h3>Сборка мусора: до</h3>
+            <img src="img/jmmgc/slaid30_sborka_musora.jpg">
+        </section>
+        <section data-transition="fade-in">
+            <h3>Сборка мусора: после</h3>
+            <img src="img/jmmgc/slaid31_sborka_musora.jpg">
+        </section>
+        <section>
+            <h3>Производительность GC</h3>
+            <ol>3 характеристики<br>
+
+                <li>Пропускная способность (Throughput)<br>
+                    Объем вычислительных ресурсов, затрачиваемых на GC
+                </li>
+                <li>Максимальная задержка (Latency)<br>
+                    Максимальное время, на которое сборщик приостанавливает выполнение программы для
+                    выполнения одной сборки. Такие остановки называются stop-the-world.
+                </li>
+                <li>Потребляемые ресурсы (Footprint)<br>
+                    Объем ресурсов процессора и памяти, потребляемых сборщиком.
+                </li>
+            </ol>
+        </section>
+        <section>
+            <h3>Треугольник оптимизации GC</h3>
+            <div style="float: left; width: 50%"><p>Максимальная оптимизация производится по 2 вершинам в ущерб третей 3-й.<br>
+                Например :<br>
+                Уменьшая потребляемые ресурсы и
+                увеличивая пропускную способность нам
+                необходимо жертвовать временем
+                максимальной задержки, которая в нашем
+                случае вырастет
+            </p></div>
+            <img style="float: left; width: 50%" src="img/jmmgc/slaid33_triangle.jpg">
+        </section>
+        <section>
+            <h3>Достижимость объектов</h3>
+            <ol> Чтобы найти мусор, нужно узнать, есть ли ссылки на объект
+                Три подхода:
+                <li><b>No-op</b>: забить и считать всё достижимым</li>
+                <li><b>Mark-*</b>: Пробежаться по графу объектов, найти достижимое и посчитать всё
+                остальное мусором</li>
+                <li><b>Reference counting</b>: на каждом чтении/записи считать количество ссылок на
+                    объект, при refcount=0 считать объект мусором</li>
+            </ol>
+        </section>
+        <section>
+            <h3>Пример маркировки объектов</h3>
+            <ul style="list-style:none;">Граф объектов можно обойти, назначая объектам цвета:
+                <li>Белый: ещё не посещён</li>
+                <li>Серый: посещён, но ссылки не просканированы</li>
+                <li>Чёрный: посещён и ссылки просканированы</li>
+                <li>Вся жизнь алгоритма маркировки – это покраска белого в серое, а серого в чёрное.</li>
+            </ul>
+        </section>
+        <section data-transition="fade-out">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Когда приложение остановлено, всё тривиально!
+                Никто не мешается под ногами.
+            </p>
+            <img src="img/jmmgc/slaid36.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Нашли все корни, покрасили их в чёрный,
+                т.к. они по определению достижимы
+            </p>
+            <img src="img/jmmgc/slaid36.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Ссылки из чёрных теперь серые, сканируем ссылки из серых
+            </p>
+            <img src="img/jmmgc/slaid38.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Сканирование из серых завершено, красим их в чёрные;
+                новые ссылки – серые
+            </p>
+            <img src="img/jmmgc/slaid39.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Серые → чёрные;
+                достижимые из серых → серые
+            </p>
+            <img src="img/jmmgc/slaid40.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Серые → чёрные;
+                достижимые из серых → серые
+            </p>
+            <img src="img/jmmgc/slaid41.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Серые → чёрные;
+                достижимые из серых → серые
+            </p>
+            <img src="img/jmmgc/slaid42.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Серые → чёрные;
+                достижимые из серых → серые
+            </p>
+            <img src="img/jmmgc/slaid43.jpg">
+        </section>
+        <section data-transition="fade-in slide-out">
+            <h3>Маркировка: stop-the-world </h3>
+            <p>Конец: всё достижимое – чёрное;
+                весь мусор – белый
+            </p>
+            <img src="img/jmmgc/slaid44.jpg">
+        </section>
+        <section>
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>В concurrent mark всё сложнее: там есть приложение, которое меняет граф
+                объектов. За это его презрительно называют мутатором.
+            </p>
+        </section>
+        <section data-transition="slide-in fade-out">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Добрался указатель сюда,
+                и только он начал сканировать ссылки...
+            </p>
+            <img src="img/jmmgc/slaid46.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Мутатор снёс ссылку из серого ...
+                и вставил её в чёрный!
+            </p>
+            <img src="img/jmmgc/slaid47.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Или даже когда-нибудь потом вставил ссылку на
+                транзитивно достижимый белый объект
+            </p>
+            <img src="img/jmmgc/slaid48.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Или даже когда-нибудь потом вставил ссылку на
+                транзитивно достижимый белый объект
+            </p>
+            <img src="img/jmmgc/slaid49.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Марк завершился, и опаньки: есть достижимые белые объекты,
+                которые мы сейчас снесём!
+
+            </p>
+            <img src="img/jmmgc/slaid50.jpg">
+        </section>
+        <section data-transition="fade-in slide-out">
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <p>Ещё хуже: появился новый объект и
+                ссылку на него записали под конец марка
+            </p>
+            <img src="img/jmmgc/slaid51.jpg">
+        </section>
+        <section>
+            <h3>Маркировка: проблемы с мутатором</h3>
+            <ol>Есть два способа решить эту проблему:
+                <li><b>Incremental Update</b>: перехватить записи и обработать вставки, обойдя новые
+                    ссылки – принимая новое на лету</li>
+                <li><b>Snapshot-at-the-Beginning</b>: перехватить записи и обработать удаления,
+                    запомнив старые ссылки – уворачиваясь от деструктивных изменений</li>
+            </ol>
+        </section>
+        <section  data-transition="fade-out">
+            <h3>Маркировка: Incremental Update</h3>
+            <p>Красим все новые ссылки в серый
+            </p>
+            <img src="img/jmmgc/slaid53.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: Incremental Update</h3>
+            <p>Конец!
+            </p>
+            <img src="img/jmmgc/slaid54.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: Incremental Update</h3>
+            <p>Бонус: если объект создали, но не записали, его не маркаем
+            </p>
+            <img src="img/jmmgc/slaid55.jpg">
+        </section>
+        <section data-transition="fade-in slide-out">
+            <h3>Маркировка: Incremental Update</h3>
+            <p>
+                Бонус: если ссылка на объект пропала, ну и ладно!
+            </p>
+            <img src="img/jmmgc/slaid55.jpg">
+        </section>
+        <section data-transition="slide-in fade-out">
+            <h3>Маркировка: SATB</h3>
+            <p>Красим все старые ссылки в серый
+            </p>
+            <img src="img/jmmgc/slaid57.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: SATB</h3>
+            <p>
+                Красим новые объекты в серый
+            </p>
+            <img src="img/jmmgc/slaid57.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: SATB</h3>
+            <p>Доделываем...
+            </p>
+            <img src="img/jmmgc/slaid59.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: SATB</h3>
+            <p>
+                Конец!
+            </p>
+            <img src="img/jmmgc/slaid60.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Маркировка: SATB</h3>
+            <p>«Snapshot At The Beginning»:
+                пометили все достижимые на начало сборки
+            </p>
+            <img src="img/jmmgc/slaid61.jpg">
+        </section>
+        <section>
+            <h3>Маркировка: две паузы в Concurrent</h3>
+            <ol>Init Mark:
+                <li>Остановить мутатор, чтобы избежать гонок</li>
+                <li>Покрасить весь rootset в чёрный</li>
+                <li>Взвести SATB/IU-барьеры в готовность</li>
+            </ol>
+            <ol>Final Mark:
+                <li>Остановить мутатор, чтобы избежать гонок</li>
+                <li>Слить остатки из SATB/IU-очередей</li>
+                <li>Доделать из остатков и изменений в rootset</li>
+            </ol>
+        </section>
+        <section>
+            <h3>Маркировка: наблюдения</h3>
+            <ol><li>Хорошо сделанный STW GC побьет хорошо сделанный concurrent GC
+                по чистой пропускной способности</li>
+                <li>Разные GC по-разному будут влиять на приложение, даже если самих
+                    сборок не происходит.</li>
+            </ol>
+        </section>
+        <section>
+            <h3>Алгоритмы «сборки мусора»</h3>
+            <ul style="list-style:none;">Mark-Sweep
+                <li>Фаза 1 – маркировка достижимых объектов</li>
+                <li>Фаза 2 – «вычистка» мусора</li>
+            </ul>
+            <ul  style="list-style:none;">Copy collector (сборка копированием)
+                <li>Использует две области памяти, но выполняется в один проход</li>
+            </ul>
+            <ul  style="list-style:none;">Mark-Sweep-Compact
+                <li>Mark-Sweep +перемещение живых объектов</li>
+            </ul>
+            <img src="img/jmmgc/slaid64.jpg">
+        </section>
+        <section>
+            <h3>Stop & Copy </h3>
+            <ul  style="list-style:none;">Copy
+                <li>Живые объекты копируются в неактивную область памяти</li>
+                <li>Неактивная область становится активной (и наоборот)</li>
+                <li>Требует дополнительной памяти</li>
+                <li>Время зависит от живых объектов</li>
+                <li>Быстрая аллокация</li>
+                <li>“Сдвиг указателя”</li>
+            </ul>
+            <img src="img/jmmgc/slaid65.jpg">
+        </section>
+        <section>
+            <h3>Mark & Sweep</h3>
+            <ul style="width: 50%; float: left;"><li><b>Mark</b><br>
+                Помечаются все живые объекты</li>
+                <li><b>Sweep</b><br>
+                    Помечается неиспользуемое место</li>
+                <li>Возможен в фоновом режиме<br>
+                    Очень низкая скорость сборки</li>
+                <li>Фрагментация памяти</li>
+                <li>Медленная аллокация <br>
+                    Списки свободной памяти</li>
+            </ul>
+            <img style="height: 11em; float: left;" src="img/jmmgc/slaid66.jpg">
+        </section>
+        <section>
+            <h3>Mark Sweep Compact</h3>
+            <ol><li>Mark<br>
+                Помечаются живые объекты</li>
+                <li>Sweep<br>
+                    Помечаются мертвые объекты</li>
+                <li>Compact<br>
+                Живые объекты переносятся в
+                    свободную область</li>
+                <li>Быстрая аллокация памяти<br>
+                    “Сдвиг указателя”</li>
+                <li>Низкая скорость сборки</li>
+            </ol>
+            <img src="img/jmmgc/slaid67.jpg">
+        </section>
+        <section>
+            <h3>Сборка мусора с поколениями</h3>
+            <div style="float:left; width: 50%">
+            <p>❖ Слабая гипотеза о поколениях основана на 2 наблюдениях<br>
+                &nbsp;&nbsp;&nbsp;➢ Большинство объектов умирают молодыми<br>
+                &nbsp;&nbsp;&nbsp;➢ Мало ссылок из старых объектов на молодые<br>
+                ❖ Вся память разбита на поколения<br>
+                &nbsp;&nbsp;&nbsp;➢ Обычно 2 поколения – молодое и старшее<br>
+                &nbsp;&nbsp;&nbsp;➢ Молодое поколение собирается отдельно<br>
+                &nbsp;&nbsp;&nbsp;➢ Пережившие несколько сборок объекты переходят
+                    из молодого поколения в старшее<br>
+                &nbsp;&nbsp;&nbsp;➢ Используется всеми сборщиками в HotSpot VM
+            </p></div>
+            <img style="float:left; width: 50%" src="img/jmmgc/slaid68.jpg">
+        </section>
+        <section data-transition="fade-out">
+            <h3>Сборка мусора с поколениями</h3>
+            <img style="height: 11em;" src="img/jmmgc/slaid69.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Структура молодого поколения</h3>
+            <img style="height:  11em;" src="img/jmmgc/slaid70.jpg">
+        </section>
+        <section data-transition="fade">
+            <h3>Структура молодого поколения</h3>
+            <img style="height:  11em;" src="img/jmmgc/slaid71.jpg">
+        </section>
+        <section data-transition="fade-in slide-out">
+            <h3>Структура молодого поколения</h3>
+            <img style="height:  11em;" src="img/jmmgc/slaid72.jpg">
+        </section>
+        <section>
+            <h3>Виды сборок </h3>
+            <ul>
+                <li>Serial GC/Последовательная сборка<br>
+                    ➢ В одном потоке , в режиме паузы</li>
+                <li>Parallel GC/Параллельная сборка<br>
+                    ➢ В нескольких потоках одновременно, в режиме паузы</li>
+                <li>Concurrent GC/Фоновая сборка<br>
+                    ➢ Одновременно с приложением в другом потоке</li>
+                <li>Incremental GC/Инкрементальная сборка<br>
+                    ➢ Чередуется с приложением, не требуя длительных пауз</li>
+            </ul>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <ul><span style="font-size: 0.5em;">Heap</span>
+                <li>Младшее поколение:<br>
+                    ➢ Eden, Survivor 0 и Survivor 1</li>
+                <li>Старшее поколение:<br>
+                    ➢ Tenured</li>
+                <li>Среднестатистический объект начинает свою жизнь в регионе Eden</li>
+
+            </ul>
+            <img src="img/jmmgc/slaid74.jpg">
+            <p>
+                Последовательная сборка молодого и старого поколений
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <img style="height: 10em;" src="img/jmmgc/slaid75.jpg">
+            <p>Как только места для вновь создаваемого объекта в Eden нет,
+                запускается малая сборка мусора.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <img style="height: 10em;" src="img/jmmgc/slaid76.jpg">
+            <p>Как только места для вновь создаваемого объекта в Eden нет,
+                JVM снова попытается провести малую сборку.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <img style="height: 10em;" src="img/jmmgc/slaid77.jpg">
+            <p>
+                Пока места в регионах Survivor достаточно, все идет хорошо.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <p>JVM постоянно следит за тем, как долго объекты перемещаются между
+                Survivor 0 и Survivor 1.
+
+            </p>
+            <img style="height: 10em;" src="img/jmmgc/slaid78.jpg">
+            <p>
+                Если регион Survivor оказывается заполненным,
+                то объекты из него отправляются в Tenured.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <img src="img/jmmgc/slaid79.jpg">
+            <p>В случае, когда места для новых объектов не хватает уже в Tenured, в дело
+                вступает полная сборка мусора, работающая с объектами из обоих поколений.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <p>В разделе Eden создается среднестатистический объект, а не любой
+            </p>
+            <p>Объекты-акселераты<br>
+                Бывают еще объекты-акселераты, размер которых настолько велик, что
+                создавать их в Eden, а потом таскать за собой по Survivor’ам слишком
+                накладно. В этом случае они размещаются сразу в Tenured.
+            </p>
+            <img src="img/jmmgc/slaid80.jpg">
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <p>❖По умолчанию младшее поколение занимает одну треть всей кучи, а старшее,
+                соответственно, две трети.<br>
+                ❖При этом каждый регион Survivor занимает одну десятую младшего поколения, то
+                есть Eden занимает восемь десятых.
+
+            </p>
+            <img src="img/jmmgc/slaid81.jpg">
+            <p>
+                В итоге пропорции регионов по умолчанию выглядят так.
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <p>А что же происходит, если даже после выделения
+                максимального объема памяти и ее полной чистки, места для
+                новых объектов так и не находится?
+
+            </p>
+        </section>
+        <section>
+            <h3>Serial GC: Принцип работы</h3>
+            <p>
+                ❖ В этом случае мы ожидаемо получаем java.lang.OutOfMemoryError: Java heap space
+                и приложение прекращает работу, оставляя нам на память свою кучу в виде файла
+                для анализа.<br>
+                ❖Технически, это происходит в случае, если работа сборщика начинает занимать не
+                менее 98% времени и при этом сборки мусора освобождают не более 2% памяти.
+            </p>
+            <img src="img/jmmgc/slaid83.jpg">
+        </section>
+        <section>
+            <h3>Serial GC: ситуации с STW</h3>
+            <p>❖С этим сборщиком все достаточно просто, так как вся его работа — это один
+                сплошной STW.<br>
+                ❖В начале каждой сборки мусора работа основных потоков приложения
+                останавливается и возобновляется только после окончания сборки.
+
+            </p>
+            <img src="img/jmmgc/slaid84.jpg">
+        </section>
+        <section>
+            <h3>Serial GC: Достоинства и недостатки</h3>
+            <p><strong>+</strong> Непритязателен по части ресурсов компьютера<br>
+                <strong>+</strong> Так как всю работу он выполняет последовательно в одном потоке, никаких заметных
+                оверхедов и негативных побочных эффектов у него нет.<br>
+                <strong>‒</strong> Долгие паузы на сборку мусора при заметных объемах данных.<br>
+                <stropng>‒</stropng> Все настройки Serial GC крутятся вокруг размеров различных регионов кучи
+
+            </p>
+            <img src="img/jmmgc/slaid85.jpg">
+        </section>
+        <section>
+            <h3>Serial GC: Вывод</h3>
+            <p>
+                Если приложению не требуется большой размер кучи для работы (Oracle
+                указывает условную границу 100 МБ), оно не очень чувствительно к коротким
+                остановкам и ему для работы доступно только одно ядро процессора, то можно
+                приглядеться к этому варианту. В противном случае можно поискать вариант
+                по-лучше.
+            </p>
+        </section>
+        <section>
+            <h3>Parallel GC: Принцип работы</h3>
+            <p>Parallel GC (параллельный сборщик) развивает идеи,
+                заложенные последовательным сборщиком, добавляя в них параллелизм и
+                немного интеллекта.
+
+            </p>
+            <img src="img/jmmgc/slaid87.jpg">
+        </section>
+        <section>
+            <h3>Parallel GC: Принцип работы</h3>
+            <p>Принципиальные отличия от Serial GC<Br>
+                &nbsp;❖ Сборкой мусора занимаются несколько потоков параллельно.<br>
+                &nbsp;❖ Данный сборщик может самостоятельно подстраиваться под требуемые
+                параметры производительности.
+            </p>
+            <img src="img/jmmgc/slaid88.jpg">
+            <p>При подключении параллельного сборщика используются те же самые подходы к
+                организации кучи, что и в случае с Serial GC
+            </p>
+        </section>
+        <section>
+            <h3>Parallel GC: Принцип работы</h3>
+            <p>❖ По умолчанию и малая и полная сборка задействуют многопоточность.<br>
+                ❖ Малая пользуется ею при переносе объектов в старшее поколение, а полная —
+                при уплотнении данных в старшем поколении
+
+            </p>
+            <img src="img/jmmgc/slaid89.jpg">
+        </section>
+        <section>
+            <h3>Parallel GC: Принцип работы</h3>
+            <p>
+                В случае, если вы задали слишком жесткие требования, которые сборщик не может
+                выполнить, он будет ориентироваться на следующие приоритеты (в порядке убывания
+                важности):<br>
+                &nbsp;● Снижение максимальной паузы.<br>
+                &nbsp;● Повышение пропускной способности.<br>
+                &nbsp;● Минимизация используемой памяти.
+            </p>
+        </section>
+        <section>
+            <h3>Parallel GC: ситуации с STW</h3>
+            <p>❖Как и в случае с последовательным сборщиком, на время операций по очистке
+                памяти все основные потоки приложения останавливаются.<br>
+                ❖Разница только в том, что пауза, как правило, короче за счет выполнения части
+                работ в параллельном режиме.
+
+            </p>
+            <img style="height: 3em;" src="img/jmmgc/slaid91.jpg">
+        </section>
+        <section>
+            <h3>Parallel GC: Достоинства и недостатки</h3>
+            <p>
+                <strong>+</strong> Возможность автоматической подстройки под требуемые параметры
+                производительности и меньшие паузы на время cборок.<br>
+                <strong>‒</strong> Определенная фрагментация памяти(в зависимости от кол-ва потоков ).<br>
+                <strong>‒</strong> Все настройки Serial GC крутятся вокруг размеров различных регионов кучи
+
+            </p>
+        </section>
+        <section>
+            <h3>Parallel GC: Вывод</h3>
+            <p>В целом, Parallel GC — это простой, понятный и эффективный сборщик,
+                подходящий для большинства приложений. У него нет скрытых накладных
+                расходов, мы всегда можем поменять его настройки и ясно увидеть
+                результат этих изменений.
+
+            </p>
+        </section>
+        <section>
+            <h3>Concurrent Mark Sweep (CMS) GC: Принцип работы</h3>
+            <p>
+                ❖ CMS GC использует ту же самую организацию памяти, что и уже рассмотренные
+                Serial / Parallel GC:<br>
+                &nbsp;&nbsp;➢ регионы Eden + Survivor 0 + Survivor 1 + Tenured<br>
+                &nbsp;&nbsp;➢ и такие же принципы малой сборки мусора.<br>
+                ❖ Отличия начинаются только тогда, когда дело доходит до полной сборки
+            </p>
+            <img src="img/jmmgc/slaid94.jpg">
+        </section>
+        <section>
+            <h3>CMS GC: Принцип работы</h3>
+            <p>Важным отличием сборщика CMS от рассмотренных ранее является то, что он не
+                дожидается заполнения Tenured для того, чтобы начать старшую сборку.
+
+            </p>
+            <img src="img/jmmgc/slaid95.jpg">
+        </section>
+        <section>
+            <h3>CMS GC: Принцип работы</h3>
+            <p>Старшая (major) сборка
+            </p>
+            <img src="img/jmmgc/slaid96.jpg">
+            <p>CMS трудится в фоновом режиме постоянно,
+                пытаясь поддерживать Tenured в компактном состоянии.
+            </p>
+        </section>
+        <section>
+            <h3>CMS GC: Принцип работы</h3>
+            <p>Отдельно следует рассмотреть ситуацию, когда сборщик не успевает
+                очистить Tenured до того момента, как память полностью заканчивается. В
+                этом случае работа приложения останавливается, и вся сборка производится
+                в последовательном режиме. Такая ситуация называется сбоем
+                конкурентного режима
+            </p>
+        </section>
+        <section>
+            <h3>CMS GC: ситуации с STW</h3>
+            <ul>
+                <li>Малая сборка мусора. Эта пауза ничем не отличается от аналогичной паузы в
+                    Parallel/Serial GC</li>
+                <li>Начальная фаза поиска живых объектов при старшей сборке (так называемая initial
+                    mark pause). Эта пауза обычно очень короткая.
+                </li>
+                <li>Фаза дополнения набора живых объектов при старшей сборке (известная также как
+                    remark pause). Она обычно длиннее начальной фазы поиска.
+                </li>
+                <li>В случае же возникновения сбоя конкурентного режима пауза может затянуться на
+                    достаточно длительное время.
+                </li>
+
+            </ul>
+        </section>
+        <section>
+            <h3>CMS GC: Достоинства и недостатки</h3>
+            <p>
+                <strong>+</strong> Ориентированность на минимизацию времен простоя, что является критическим
+                фактором для многих приложений.<br>
+                <strong>─</strong> Но для выполнения этой задачи приходится жертвовать ресурсами процессора и
+                зачастую общей пропускной способностью.<br>
+                <strong>‒</strong> Сборщик не уплотняет объекты в старшем поколении, что приводит к фрагментации
+                Tenured.
+            </p>
+        </section>
+        <section>
+            <h3>CMS GC: Вывод</h3>
+            <p>
+                В целом, CMS GC может подойти приложениям, использующим большой объем
+                долгоживущих данных. В этом случае некоторые его недостатки нивелируются. Но в
+                любом случае, не стоит принимать решение о его использовании пока вы не
+                познакомились с еще одним сборщиком в обойме Java HotSpot VM.
+            </p>
+        </section>
+        <section>
+            <h3>Garbage First (G1) GC: Принцип работы</h3>
+            <p>
+                Изменен подход к организации кучи.<br>
+                &nbsp;❖ Память разбивается на множество регионов одинакового размера.<br>
+                &nbsp;❖ Размер этих регионов зависит от общего размера кучи и по умолчанию выбирается
+                так, чтобы их было не больше 2048, обычно получается от 1 до 32 МБ.<br>
+                Исключение<br>
+                &nbsp;❖ Громадные (humongous) регионы, которые создаются объединением обычных
+                регионов для размещения очень больших объектов.
+
+            </p>
+        </section>
+        <section data-transition="slide-in fade-out">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid102.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;">
+                <p>❖ Молодое поколение<br>
+                    &nbsp;➢ Набор регионов<br>
+                    &nbsp;&nbsp;&nbsp;■ Eden<br>
+                    &nbsp;&nbsp;&nbsp;■ Survivor<br>
+                    &nbsp;➢ Выбирается динамически<br>
+                </p>
+            </div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid103.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;">
+            <p>
+                ❖ Старое поколение<br>
+                &nbsp;➢ Набор регионов<br>
+                &nbsp;➢ Выбирается динамически<br>
+            </p></div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid104.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;"><p>
+                ❖ Большие объекты<br>
+                &nbsp;➢ Не помещается в регион<br>
+                &nbsp;➢ Называется “humongous”<br>
+                &nbsp;➢ Хранится в наборе смежных
+                регионов
+            </p></div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid105.jpg">
+            <div  style="width: 40%; float: left; margin-left: 0.3em;"><p>
+                ❖ Collection Set<br>
+                &nbsp;➢ Регионы, в которых будет происходить GC<br>
+                &nbsp;&nbsp;&nbsp;■ Все молодое поколение<br>
+                &nbsp;&nbsp;&nbsp;■ Некоторые регионы из старшего
+                поколения<br>
+                &nbsp;&nbsp;&nbsp;&nbsp;&nbsp;● Фоновая маркировка определяет
+                наиболее подходящие
+            </p></div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid106.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;"><p>
+                Типы сборок<br>
+                &nbsp;&nbsp;❖ В молодом поколении<br>
+                &nbsp;&nbsp;❖ Смешанные (mixed)<br>
+                &nbsp;&nbsp;❖ FullGC<br>
+            </p></div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid107.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;"><p>
+                Сборка<br>
+                &nbsp;&nbsp;❖ Копирование объектов в регионы,
+                помеченные как часть «To»-пространства<br>
+                &nbsp;&nbsp;&nbsp;➢ Survivor - регионы<br>
+                &nbsp;&nbsp;&nbsp;➢ Регионы из старшего поколения<br>
+            </p></div>
+
+        </section>
+        <section data-transition="fade">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid108.jpg">
+            <div style="width: 40%; float: left; margin-left: 0.3em;"><p>
+                Освобождение памяти<br>
+                &nbsp;&nbsp;❖ From - space больше чем
+                To-space(не обязательно!)<br>
+                &nbsp;&nbsp;❖ Компактификация за счет
+                копирования
+            </p></div>
+
+        </section>
+        <section data-transition="fade-in slide-out">
+            <h3>G1 GC: Структура кучи</h3>
+            <img style="width: 50%; float: left" src="img/jmmgc/slaid109.jpg">
+            <div><p>
+                RSet== Remembered Set<br>
+                &nbsp;&nbsp;❖ Информация о местонахождении
+                ссылок на объекты из региона<br>
+                &nbsp;&nbsp;❖ Позволяет собирать регионы
+                независимо<br>
+                &nbsp;&nbsp;❖ RSet поддерживается<br>
+                &nbsp;&nbsp;&nbsp;➢ Из старого в молодое
+                поколение<br>
+                &nbsp;&nbsp;&nbsp;➢ Между регионами в старом
+                поколении
+            </p></div>
+
+        </section>
+        <section>
+            <h3>G1 GC: Принцип работы</h3>
+            <p>
+                Малая сборка<br>
+                &nbsp;❖ MinorGC - убираются регионы Eden/Survived<br>
+                &nbsp;&nbsp;○ Вместо переноса объектов может быть изменен тип региона, с Survived на Tenured<br>
+                &nbsp;&nbsp;○ Используется алгоритм предсказания кол-ва мусора в регионе. Убираются имеющие
+                более высокую вероятность - отсюда название алгоритма
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: Принцип работы</h3>
+            <p>
+                Полная сборка(смешанной (mixed))<br>
+                Процесс цикла пометки (marking cycle), который работает параллельно с основным приложением
+                и составляет список живых объектов.<br>
+                &nbsp;&nbsp;❖ (Initial mark)Маркировка корневых объектов полученных из малых циклов, остановка
+                приложения<br>
+                &nbsp;&nbsp;❖ (Concurrent marking)Параллельная пометка живых объектов , во время работающего
+                приложения<br>
+                &nbsp;&nbsp;❖ (Remark)Остановка приложения и повторный поиск неучтенных объектов<br>
+                &nbsp;&nbsp;❖ (Cleanup)Очистка от мусора при остановленном приложении, поиск пустых регионов для
+                новых объектов параллельно с работающим приложением<br>
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: Принцип работы</h3>
+            <p>
+                Следует иметь в виду, что для получения списка живых объектов G1
+                использует алгоритм Snapshot-At-The-Beginning (SATB), то есть в
+                список живых попадают все объекты, которые были таковыми на
+                момент начала работы алгоритма, плюс все объекты, созданные за
+                время его выполнения. Это, в частности, означает, что G1
+                допускает наличие плавающего мусора, с которым мы познакомились
+                при рассмотрении сборщика CMS.
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: ситуации с STW</h3>
+            <p>
+                ❖ Процессы переноса объектов между поколениями. Для минимизации
+                таких пауз G1 использует несколько потоков.<br>
+                ❖ Короткая фаза начальной пометки корней в рамках цикла пометки.<br>
+                ❖ Более длинная пауза в конце фазы remark и в начале фазы cleanup
+                цикла пометки.
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: Достоинства и недостатки</h3>
+            <p>
+                Недостатки<br>
+                &nbsp;&nbsp;● Чувствителен к большим объектам<br>
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: Достоинства и недостатки</h3>
+            <p>
+                Достоинства<br>
+                &nbsp;&nbsp;● Адаптивный, подстраивается под требования к производительности и
+                выделенным ресурсам<br>
+                &nbsp;&nbsp;● Уменьшена вероятность SWT<br>
+                &nbsp;&nbsp;● Нет проблем с фрагментацией Tenured<br>
+                &nbsp;&nbsp;● Новые интересные стратегии тюнинга приложений<br>
+            </p>
+        </section>
+        <section>
+            <h3>G1 GC: Вывод</h3>
+            <p>
+                В целом, G1 GC это достойная замена CMS для серверных приложений, а так
+                же как плацдарм для экспериментов.
+            </p>
+        </section>
+        <section>
+            <h3>Настройка GC в JVM: Serial GC</h3>
+            <p>
+                ● Использование Serial GC включается опцией <code>-XX:+UseSerialGC</code>.<br>
+                ● C помощью опций Xms и Xmx можно настроить начальный и максимально допустимый размер кучи
+                соответственно.<br>
+                ● Существуют опции <code>-XX:MinHeapFreeRatio=?</code> и <code>-XX:MaxHeapFreeRatio=?</code>, которые задают
+                минимальную и максимальную долю свободного места в каждом поколении, при достижении которой
+                размер поколения будет автоматически увеличен или уменьшен соответственно.<br>
+                ● Установить желаемое отношение размера старшего поколения к суммарному размеру регионов
+                младшего поколения можно с помощью опции <code>-XX:NewRatio=?</code><br>
+                ● При желании можно ограничить размер младшего поколения абсолютными величинами снизу и сверху
+                с помощью опций <code>-XX:NewSize=?</code> и <code>-XX:MaxNewSize=?</code>.<br>
+                ● C помощью опции <code>-XX:-UseGCOverheadLimit</code> можно отключить порог активности сборщика в 98%, при
+                достижении которого возникает <code>OutOfMemoryError</code>.
+            </p>
+        </section>
+        <section>
+            <h3>Настройка GC в JVM: Parallel GC</h3>
+            <p>
+                ● Параллельный сборщик включается опцией -XX:+UseParallelGC.<br>
+                ● Вы можете вручную указать количество потоков, которое хотели бы выделить для сборки мусора. Это
+                делается с помощью опции -XX:ParallelGCThreads=?.<br>
+                ● При желании вы можете полностью отключить параллельные работы по уплотнению объектов в
+                старшем поколении опцией -XX:-UseParallelOldGC.<br>
+                ● Установка желаемых параметров производительности сборщика выполняется с помощью опций
+                <code>-XX:MaxGCPauseMillis=?</code> и <code>-XX:GCTimeRatio=?</code>.<br>
+                ● Опции <code>-XX:YoungGenerationSizeIncrement=?</code> и <code>-XX:TenuredGenerationSizeIncrement=?</code> устанавливают,
+                на сколько процентов следует при необходимости увеличивать младшее и старшее поколение соотвественно.
+                По умолчанию оба этих параметра равны 20.<br>
+                ● А вот скорость уменьшения размеров поколений регулируется не процентами, а специальным фактором
+                через опцию <code>-XX:AdaptiveSizeDecrementScaleFactor</code>. Она указывает, во сколько раз уменьшение должно
+                быть меньше увеличения.<br>
+            </p>
+        </section>
+        <section>
+            <h3>Настройка GC в JVM: CMS GC</h3>
+            <p>
+                ● Использование CMS GC включается опцией <code>-XX:+UseConcMarkSweepGC.</code><br>
+                ● Так как подходы к организации памяти у CMS аналогичны используемым в Serial / Parallel GC, для него
+                применимы те же опции определения размеров регионов кучи, а также опции автоматической подстройки
+                под требуемые параметры производительности.<br>
+                ● Обычно CMS, основываясь на собираемой статистике о поведении приложения, сам определяет, когда
+                ему выполнять старшую сборку, но у него также есть порог наполненности региона Tenured, при
+                достижении которого должна обязательно быть инициирована старшая сборка. Этот порог можно задать с
+                помощью опции <code>-XX:CMSInitiatingOccupancyFraction=?</code>, значение указывается в процентах.
+            </p>
+            <img style="height: 5em;"src="img/jmmgc/slaid119.jpg">
+        </section>
+        <section>
+            <h3>Настройка GC в JVM: G1 GC</h3>
+            <p>
+                ● G1 включается опцией Java <code>-XX:+UseG1GC</code><br>
+                ● Так как основной целью сборщика G1 является минимизация пауз в работе основного приложения, то и
+                главной опцией при его настройке можно считать уже встречавшуюся нам <code>-XX:MaxGCPauseMillis=?</code>, задающую
+                приемлемое для нас максимальное время разовой сборки мусора.<br>
+                ● Опции <code>-XX:ParallelGCThreads=?</code> и <code>-XX:ConcGCThreads=?</code> задают количество потоков, которые будут
+                использоваться для сборки мусора и для выполнения цикла пометок соответственно.<br>
+                ● Если вас не устраивает автоматический выбор размера региона, вы можете задать его вручную с помощью
+                опции <code>-XX:G1HeapRegionSize=?</code>. Значение должно быть степенью двойки, если мерить в мегабайтах.<br>
+                ● При желании можно изменить порог заполненности кучи, при достижении которого инициируется
+                выполнение цикла пометок и переход в режим смешанных сборок. Это делается опцией
+                <code>-XX:InitiatingHeapOccupancyPercent=?</code>, принимающей значение в процентах. По умолчанию, этот порог равен
+                45%.<br>
+                ● Если же вы решите залезть в дебри настроек G1 по-глубже, то можете включить дополнительные функции
+                опциями <code>-XX:+UnlockExperimentalVMOptions</code> и <code>-XX:+AggressiveOpts</code> и поиграть с экспериментальными
+                настройками.<br>
+            </p>
+        </section>
+        <section>
+            <h3>Что  есть ещё?</h3>
+            <ul>
+                <li>ZGC</li>
+                <li>Shenandoah</li>
+            </ul>
+        </section>
+
+        <section>
+            <h1>Конец</h1>
+            <h4>вопросы</h4>
+        </section>
+    </div>
+
+</div>
+
+<script src="lib/js/head.min.js"></script>
+<script src="js/reveal.js"></script>
+
+<script>
+
+    // Full list of configuration options available at:
+    // https://github.com/hakimel/reveal.js#configuration
+    Reveal.initialize({
+        controls: false,
+        progress: true,
+        history: true,
+        center: true,
+        slideNumber: true,
+
+        transition: 'slide', // none/fade/slide/convex/concave/zoom
+
+        // Optional reveal.js plugins
+        dependencies: [
+            {
+                src: 'lib/js/classList.js', condition: function () {
+                    return !document.body.classList;
+                }
+            },
+            {
+                src: 'plugin/markdown/marked.js', condition: function () {
+                    return !!document.querySelector('[data-markdown]');
+                }
+            },
+            {
+                src: 'plugin/markdown/markdown.js', condition: function () {
+                    return !!document.querySelector('[data-markdown]');
+                }
+            },
+            {
+                src: 'plugin/highlight/highlight.js', async: true, condition: function () {
+                    return !!document.querySelector('pre code');
+                }, callback: function () {
+                    hljs.initHighlightingOnLoad();
+                }
+            },
+            {src: 'plugin/zoom-js/zoom.js', async: true},
+            {src: 'plugin/notes/notes.js', async: true}
+        ]
+    });
+
+    window.addEventListener("mousedown", handleClick, false);
+    window.addEventListener("contextmenu", function (e) {
+        e.preventDefault();
+    }, false);
+
+    function handleClick(e) {
+        e.preventDefault();
+        if (e.button === 0) Reveal.next();
+        if (e.button === 2) Reveal.prev();
+    }
+</script>
+
+</body>
+</html>

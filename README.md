@@ -10,7 +10,7 @@
 * Лекция 5. 
 * *Практика 2.*
 * Лекция 6. 
-* Лекция 7. 
+* Лекция 7. [JMM и GC](https://naumen-student.github.io/EnterpriseJavaCourse-s2021/lecture/lecture07.html)
 * *Практика 3.*
 * Лекция 8. 
 * Лекция 9. 
